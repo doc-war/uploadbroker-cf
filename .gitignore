@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+coverage/
+/deploy/wrangler.jsonc
+/wrangler.jsonc
+bench-results/
+
+/deploy/dist/
+/deploy/.wrangler/
+
+/deploy/reports/
+/deploy/.deployment.lock

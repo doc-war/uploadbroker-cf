@@ -1,0 +1,29 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Set account_id below to your real 32-character Account ID (not Zone ID), and configure routes.
+  // The deployment script injects vars.build_time automatically.
+  "name": "uploadbroker-cf",
+  "account_id": "replace-with-your-account-id",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-10",
+  "r2_buckets": [{ "binding": "bucket", "bucket_name": "uploadbroker-cf" }],
+  "triggers": { "crons": ["*/10 * * * *"] },
+  // Copy to deploy/wrangler.jsonc; configure all values here, including keys.
+  "vars": {
+    "base_url": "http://localhost:8787",
+    "url_prefix": "tmp",
+    "default_ttl_hours": 24,
+    "limit_image_mib": 50,
+    "limit_audio_mib": 5,
+    "limit_video_mib": 10,
+    "limit_document_mib": 5,
+    "limit_archive_mib": 30,
+    "cors": true,
+    // Default is chosen after the local hash/upload benchmarks; see docs/performance.md.
+    "content_hash": "sha256",
+    // First key signs new URLs; optional second key accepts URLs during rotation.
+    "url_blake2b_salts": ["replace-with-a-random-url-key"],
+    // Empty allows anonymous uploads. Set a key shared with your Platform.
+    "hmac_secret": ""
+  }
+}

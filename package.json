@@ -1,0 +1,32 @@
+{
+  "name": "uploadbroker-cf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UploadBroker-compatible temporary resource gateway for Cloudflare Workers and R2",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "test": "npm run build && node --test test/*.test.js",
+    "build": "wrangler deploy --config wrangler.example.jsonc --dry-run --outdir deploy/dist",
+    "deploy": "node scripts/deploy.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "bench": "npm run build && node scripts/benchmark.mjs",
+    "deploy:check": "node scripts/deploy.mjs --check",
+    "deploy:rollback": "node scripts/rollback.mjs",
+    "config:init": "node scripts/config-init.mjs"
+  },
+  "dependencies": {
+    "blakejs": "1.2.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jsonc-parser": "3.3.1",
+    "miniflare": "5.20261006.1-alpha",
+    "wrangler": "4.149.0",
+    "xxhash-wasm": "1.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
