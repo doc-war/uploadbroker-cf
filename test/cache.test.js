@@ -5,7 +5,7 @@ import { token } from '../src/hash.js';
 import { cacheRead } from '../src/cache.js';
 
 function fixture({ recordTTL = 120, urlTTL = 120 } = {}) {
-  const now = Math.floor(Date.now() / 1000), key = 'a'.repeat(64), content = 'cached image bytes';
+  const now = Math.floor(Date.now() / 1000), key = 'aaaaaaaa-18', content = 'cached image bytes';
   const record = { expireAt: now + recordTTL, extension: '.png', mimeType: 'image/png', storageKey: 'objects/file' };
   const pending = [], stored = new Map(); let reads = 0, matches = 0, puts = 0;
   const cache = {

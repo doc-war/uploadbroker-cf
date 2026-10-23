@@ -11,7 +11,7 @@ async function read(request, bucket, cfg, ctx) {
   const [, , expiry, shard, key, signature] = parts;
   const match = /^([0-9a-f]{16})(\.[a-z0-9+_-]+)$/.exec(signature);
   const expire = Number(expiry);
-  if (!/^\d+$/.test(expiry) || !Number.isSafeInteger(expire) || expire > 253402300799 || !/^(?:[0-9a-f]{64}|[0-9a-f]{8}-[1-9][0-9]{0,8})$/.test(key) || shard !== key.slice(0, 2) || !match) throw new BrokerError(40401, 'invalid url');
+  if (!/^\d+$/.test(expiry) || !Number.isSafeInteger(expire) || expire > 253402300799 || !/^[0-9a-f]{8}-[1-9][0-9]{0,8}$/.test(key) || shard !== key.slice(0, 2) || !match) throw new BrokerError(40401, 'invalid url');
   if (!cfg.salts.some(salt => equal(token(salt, key, expire), match[1]))) throw new BrokerError(40401, 'invalid token');
   const now = Math.floor(Date.now() / 1000);
   if (expire <= now) throw new BrokerError(40402, 'resource expired');

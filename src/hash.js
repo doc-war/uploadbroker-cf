@@ -1,20 +1,9 @@
 import blake from 'blakejs';
 import { XXHash32 } from './xxhash32.js';
 const { blake2bHex } = blake;
-export function newContentHasher(algorithm = 'sha256') {
-  if (algorithm === 'xxhash32') {
-    const hash = new XXHash32();
-    return { update: bytes => hash.update(bytes), digest: async () => `${hash.digest()}-${hash.length}`, abort: async () => {} };
-  }
-  const stream = new crypto.DigestStream('SHA-256');
-  const writer = stream.getWriter();
-  // Mark rejection handled even if parsing fails before digest is consumed.
-  stream.digest.catch(() => {});
-  return {
-    update: bytes => writer.write(bytes),
-    async digest() { await writer.close(); return hex(new Uint8Array(await stream.digest)); },
-    async abort() { await writer.abort().catch(() => {}); }
-  };
+export function newContentHasher() {
+  const hash = new XXHash32();
+  return { update: bytes => hash.update(bytes), digest: async () => `${hash.digest()}-${hash.length}`, abort: async () => {} };
 }
 export function hex(bytes) { return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join(''); }
 export function token(salt, key, expire) {

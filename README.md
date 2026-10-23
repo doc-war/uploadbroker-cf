@@ -45,7 +45,9 @@ npm run dev
 }
 ```
 
-相同内容剩余有效期至少 10 分钟时复用旧响应，不根据本次 expires 续期。内容 key 默认使用 Workers 原生流式 SHA-256；也可选择纯 JS XXH32，key 为 `8位哈希-字节数`。去重同时核对记录大小。XXH32 不具备抗碰撞保证，同大小文件碰撞仍可能被误判为重复。URL 签名始终使用原 Go 版的 BLAKE2b-256，与内容算法独立。旧 Go 存量文件不会自动迁移。
+相同内容剩余有效期至少 10 分钟时复用旧响应，不根据本次 expires 续期。内容 key 固定使用纯 JS XXH32（seed=0），格式为 `8位小写十六进制哈希-字节数`。哈希与大小作为完整去重依据，不增加同大小碰撞处理。URL 签名始终使用原 Go 版的 BLAKE2b-256，与内容算法独立。旧 Go 存量文件不迁移，旧 CF SHA-256 URL 直接废弃。
+
+服务端／原生客户端可在同一个 upload 请求中添加 X-UploadBroker-Hash 和 X-UploadBroker-Size：已有对象可复用时，读取文件前直接返回 URL；未命中继续上传并核对声明。启用该路径要求实际使用 HTTP/2 或 HTTP/3，鉴权、TTL 也须提前提供。未传新 Header 的调用方式保持兼容。详见 [Header 快速查重接入文档](docs/fast-upload.md)。
 
 支持 PNG/JPEG/WebP、ID3 MP3、WAV、MP4/WebM、PDF、ZIP/7z/RAR，以及原项目文本/源码白名单。按真实文件头检测，不相信上传声明的 Content-Type。M4A/AAC 原项目虽列入配置名单，其实际魔数实现未支持，当前不以扩展名放行。HTML/SVG/XML 内容不开放。
 
@@ -69,7 +71,7 @@ npm run dev
 | build_time | dev/deploy 启动时自动生成 | 注入 UTC 时间戳，health.time 和部署验收使用 |
 | url_blake2b_salts | 模板占位符 | 原生数组，1～2 个盐；部署前替换为随机密钥 |
 | hmac_secret | 空 | 留空允许匿名上传；由 Platform 持有 |
-| content_hash | sha256 | sha256 或 xxhash32；见 [性能记录](docs/performance.md) |
+| content_hash | xxhash32 | 固定内容算法，可省略；其他值拒绝启动 |
 
 单类限制只接受 1～90 MiB 的整数（1 MiB = 1,048,576 字节），请求总上限为最大分类限制 + 1 MiB。原签名允许重放，HMAC 密钥应由 Platform 持有，不嵌入浏览器代码。
 
@@ -119,9 +121,9 @@ npm run deploy
 
 ## 50 MB 与免费 CPU 额度
 
-50 MiB 没有超过 Cloudflare Free/Pro 账户 100 MB 请求体上限。上传采用流式解析 + 原生 SHA-256，以 5 MiB 为一段，最多同时处理两个分段，不整包读入 Worker 内存。
+50 MiB 没有超过 Cloudflare Free/Pro 账户 100 MB 请求体上限。上传采用流式解析 + 增量 XXH32，以 5 MiB 为一段，最多同时处理两个分段，不整包读入 Worker 内存。Header 快速命中时不会读取文件或执行分段上传。
 
-但 **低请求量不等于单请求 CPU 足够**：Workers Free 每次调用只有 10 ms CPU。本地对比不足以证明纯 JS XXH32 的线上 CPU 更稳定，默认保留原生 SHA-256；multipart 解析、复制等仍耗 CPU，不能保证任意 50 MB 上传在 Free 稳定成功。本地 workerd 测试不执行线上套餐计费限额。
+但 **低请求量不等于单请求 CPU 足够**：Workers Free 每次调用只有 10 ms CPU。XXH32、multipart 解析、复制等仍耗 CPU，不能保证任意 50 MB 未命中上传在 Free 稳定成功。本地 workerd 测试不执行线上套餐计费限额。
 
 部署后运行烟雾验证，并在 Cloudflare Workers Metrics / invocation logs 检查 CPU time、错误和上传成功率：
 
@@ -143,11 +145,11 @@ npm run smoke -- --base-url https://upload.example.com --file C:\images\large.pn
 
 ## 哈希基准
 
-`npm run bench` 对 1/10/50 MB 数据运行原生 SHA-256 和纯 JS XXH32 的独立计算、流式哈希及完整 R2 上传对比。方法、结果和默认值依据见 [docs/performance.md](docs/performance.md)。基准 Worker 的整包缓存仅用于隔离计算测量，生产上传保持流式处理。
+`npm run bench` 对 1/10/50 MiB 数据比较 SHA-256 和 XXH32 的独立计算与流式哈希，完整 R2 上传只测固定的 XXH32。历史双算法结果见 [docs/performance.md](docs/performance.md)，不代表当前算法仍可切换。基准 Worker 的整包缓存仅用于隔离计算测量，生产上传保持流式处理。
 
 ## 验证范围
 
-自动测试覆盖两种内容算法的 50 MiB 上传、下载哈希一致性及超限拒绝，也覆盖缓存命中、签名及过期校验、背压、缓存故障降级、分段直写、并发去重和旧数据兼容。尚未验证本次优化部署后的真实延迟与线上 CPU。
+自动测试覆盖固定 XXH32 的 50 MiB 上传、下载完整性及超限拒绝，以及 Header 命中／未命中、提前鉴权、协议限制、声明不符、真实本地 HTTP/2 提前响应和旧 SHA-256 URL 拒绝。也覆盖缓存、背压、分段直写、并发去重及旧 XXH32 对象布局。Header 功能尚未完成部署后的真实 Cloudflare 验收。
 
 MIT，沿用原项目版权声明。
 

@@ -9,7 +9,7 @@ import { smoke } from '../scripts/smoke.mjs';
 const oracle = await reference();
 const MiB = 1024 * 1024;
 const png = Uint8Array.of(137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82);
-for (const algorithm of ['sha256', 'xxhash32']) describe(algorithm, () => {
+for (const algorithm of ['xxhash32']) describe(algorithm, () => {
 let mf, bucket;
 async function send(url, init = {}) {
   // Exercise the local HTTP listener directly, bypassing dispatchFetch's proxy.
@@ -101,6 +101,21 @@ test('health and cors', async () => {
   assert.equal(preflight.status, 204); assert.equal(preflight.headers.get('access-control-allow-origin'), '*');
 });
 
+test('workerd uses header deduplication and rejects HTTP/1 for the opt-in path', async () => {
+  const bytes = new TextEncoder().encode('native workerd header dedup');
+  const original = await (await post(bytes, 'fast.txt')).json();
+  const headers = { 'X-UploadBroker-Hash': oracle.h32Raw(bytes).toString(16).padStart(8, '0'),
+    'X-UploadBroker-Size': String(bytes.length), 'X-UploadBroker-Timestamp': '123',
+    'X-UploadBroker-Sign': await hmac('upload-secret', '123'), 'content-type': 'multipart/form-data; boundary=not-sent' };
+  const response = await mf.dispatchFetch('https://broker.test/v1/upload', { method: 'POST', headers,
+    cf: { httpProtocol: 'HTTP/2' } });
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.equal(response.headers.get('x-uploadbroker-dedup'), 'HIT');
+  assert.deepEqual((await response.json()).data, original.data);
+  const rejected = await send('https://broker.test/v1/upload', { method: 'POST', headers });
+  assert.equal((await rejected.json()).code, 40001);
+});
+
 test('native edge cache serves a second signed download with the same content', async () => {
   const content = `native cache ${algorithm}`;
   const result = await (await post(content, 'cache.txt')).json();
@@ -118,7 +133,7 @@ test('native edge cache serves a second signed download with the same content', 
 });
 
 test('legacy object and index layouts remain readable after the upload optimization', async () => {
-  const key = 'f'.repeat(64), expireAt = Math.floor(Date.now() / 1000) + 3600;
+  const key = 'ffffffff-14', expireAt = Math.floor(Date.now() / 1000) + 3600;
   const storageKey = `objects/${key}/${expireAt}/legacy`;
   await bucket.put(storageKey, 'legacy content', { customMetadata: { expireAt: String(expireAt) } });
   await bucket.put(`index/${key}`, JSON.stringify({ key, storageKey, expireAt, extension: '.txt', mimeType: 'text/plain', size: 14 }),

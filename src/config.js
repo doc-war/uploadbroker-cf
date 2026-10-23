@@ -14,8 +14,8 @@ export function config(env) {
   const prefix = env.url_prefix ?? 'tmp';
   if (!/^[a-zA-Z0-9_-]+$/.test(prefix)) throw new Error('invalid url_prefix');
   const limits = Object.fromEntries(['image', 'audio', 'video', 'document', 'archive'].map((category, i) => [category, number(`limit_${category}_mib`, [50, 5, 10, 5, 30][i], 90) * MiB]));
-  const contentHash = env.content_hash ?? 'sha256';
-  if (!['sha256', 'xxhash32'].includes(contentHash)) throw new Error('invalid content_hash');
+  const contentHash = env.content_hash ?? 'xxhash32';
+  if (contentHash !== 'xxhash32') throw new Error('content_hash must be xxhash32');
   const cors = env.cors ?? true;
   if (typeof cors !== 'boolean') throw new Error('invalid cors');
   if (env.hmac_secret !== undefined && typeof env.hmac_secret !== 'string') throw new Error('invalid hmac_secret');

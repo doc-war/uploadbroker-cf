@@ -20,7 +20,7 @@
     "limit_archive_mib": 30,
     "cors": true,
     // Default is chosen after the local hash/upload benchmarks; see docs/performance.md.
-    "content_hash": "sha256",
+    "content_hash": "xxhash32",
     // First key signs new URLs; optional second key accepts URLs during rotation.
     "url_blake2b_salts": ["replace-with-a-random-url-key"],
     // Empty allows anonymous uploads. Set a key shared with your Platform.

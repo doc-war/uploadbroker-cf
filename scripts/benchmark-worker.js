@@ -1,4 +1,13 @@
-import { newContentHasher } from '../src/hash.js';
+import { newContentHasher as newXXHasher, hex } from '../src/hash.js';
+// SHA-256 remains only as a benchmark reference, not a production content algorithm.
+function newContentHasher(algorithm) {
+  if (algorithm === 'xxhash32') return newXXHasher();
+  const stream = new crypto.DigestStream('SHA-256'), writer = stream.getWriter();
+  stream.digest.catch(() => {});
+  return { update: bytes => writer.write(bytes),
+    async digest() { await writer.close(); return hex(new Uint8Array(await stream.digest)); },
+    async abort() { await writer.abort().catch(() => {}); } };
+}
 // Benchmark-only cache isolates hashing from client I/O. Production uploads remain streaming.
 let cached;
 export default {

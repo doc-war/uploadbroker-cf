@@ -1,12 +1,28 @@
 import { BrokerError } from './errors.js';
 import { multipart } from './multipart.js';
 import { detect, validateExtension } from './mime.js';
-import { newContentHasher, hmac, equal, responseData } from './hash.js';
+import { newContentHasher, responseData } from './hash.js';
 import { UploadedFile, commit, lookup, reusable } from './storage.js';
+import { uploadOptions, authorizeUpload, uploadTTL } from './upload-options.js';
 
 export async function upload(request, bucket, cfg) {
-  const file = new UploadedFile(bucket), hasher = newContentHasher(cfg.contentHash);
-  const fields = new URL(request.url).searchParams;
+  const { fields, hint } = uploadOptions(request, cfg);
+  if (hint) {
+    await authorizeUpload(fields, cfg);
+    uploadTTL(fields, cfg);
+    try {
+      const entry = await lookup(bucket, hint.key);
+      if (entry && entry.record.size > cfg.limits[entry.record.category]) throw new BrokerError(40004, 'file too large');
+      const existing = await reusable(bucket, entry, Math.floor(Date.now() / 1000), hint.size);
+      if (existing) return Response.json({ code: 0, data: responseData(cfg, existing) }, {
+        headers: { 'X-UploadBroker-Dedup': 'HIT', 'Cache-Control': 'no-store' }
+      });
+    } catch (error) {
+      if (error instanceof BrokerError) throw error;
+      throw new BrokerError(50001, 'storage lookup failed');
+    }
+  }
+  const file = new UploadedFile(bucket), hasher = newContentHasher();
   let mode, field, fieldChunks, fieldSize, filename, seenFile = false, size = 0, type;
   let head = new Uint8Array(0);
   const inspect = () => {
@@ -58,24 +74,19 @@ export async function upload(request, bucket, cfg) {
         }
       }
     });
-    if (cfg.hmac) {
-      if (!fields.get('sign') || !fields.get('timestamp')) throw new BrokerError(50000, 'missing sign or timestamp');
-      if (!equal(await hmac(cfg.hmac, fields.get('timestamp')), fields.get('sign'))) throw new BrokerError(50000, 'invalid sign');
-    }
+    await authorizeUpload(fields, cfg);
     if (!seenFile) throw new BrokerError(40001, 'missing file');
-    let ttl = cfg.ttl;
-    if (fields.get('expires')) {
-      const hours = fields.get('expires');
-      if (!/^[+-]?\d+$/.test(hours) || Number(hours) < 1 || Number(hours) > 24) throw new BrokerError(40005, 'expires 1-24');
-      ttl = Number(hours) * 3600;
-    }
+    const ttl = uploadTTL(fields, cfg);
     const now = Math.floor(Date.now() / 1000);
     const record = { key: await hasher.digest(), contentHash: cfg.contentHash, ...type, size, createdAt: now, expireAt: now + ttl };
+    if (hint && (record.key !== hint.key || size !== hint.size)) throw new BrokerError(40001, 'declared hash or size does not match file');
     try {
       const entry = await lookup(bucket, record.key);
       const existing = await reusable(bucket, entry, now, record.size);
-      if (existing) return Response.json({ code: 0, data: responseData(cfg, existing) });
-      return Response.json({ code: 0, data: responseData(cfg, await commit(bucket, file, record, now, entry)) });
+      const result = existing ?? await commit(bucket, file, record, now, entry);
+      return Response.json({ code: 0, data: responseData(cfg, result) }, hint ? {
+        headers: { 'X-UploadBroker-Dedup': 'MISS', 'Cache-Control': 'no-store' }
+      } : undefined);
     } catch (error) {
       if (error instanceof BrokerError) throw error;
       throw new BrokerError(50001, 'storage write failed');

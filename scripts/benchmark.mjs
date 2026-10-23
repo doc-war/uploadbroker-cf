@@ -12,7 +12,7 @@ await mkdir('bench-results', { recursive: true });
 await build({ entryPoints: ['scripts/benchmark-worker.js'], outfile: 'bench-results/hash-worker.js', bundle: true, format: 'esm', platform: 'browser' });
 const settings = await readConfig('wrangler.example.jsonc');
 const workers = [{ name: 'hash', routes: ['hash.bench/*'], modules: true, scriptPath: 'bench-results/hash-worker.js', compatibilityDate: settings.compatibility_date },
-  ...['sha256', 'xxhash32'].map(algorithm => ({ name: `upload-${algorithm}`, routes: [`${algorithm}.bench/*`], modules: true, scriptPath: 'deploy/dist/worker.js',
+  ...['xxhash32'].map(algorithm => ({ name: `upload-${algorithm}`, routes: [`${algorithm}.bench/*`], modules: true, scriptPath: 'deploy/dist/worker.js',
     compatibilityDate: settings.compatibility_date, r2Buckets: { bucket: `bench-${algorithm}` },
     bindings: { ...settings.vars, base_url: `https://${algorithm}.bench`, content_hash: algorithm, url_blake2b_salts: ['benchmark-only'], hmac_secret: '' } }))];
 const mf = new Miniflare(convertV4MiniflareOptions({ workers, inspectorPort: 0 }));
@@ -97,13 +97,17 @@ try {
   }
   // Warm the exact functions/runtimes before measured cases.
   const warm = randomFillSync(new Uint8Array(65536)); warm.set([137,80,78,71,13,10,26,10]);
-  for (let i = 0; i < 3; i++) for (const stage of ['compute', 'hash', 'upload']) for (const algorithm of ['sha256','xxhash32']) await measure(stage, algorithm, warm, -1 - i);
+  for (let i = 0; i < 3; i++) for (const stage of ['compute', 'hash', 'upload']) for (const algorithm of ['sha256','xxhash32']) {
+    if (stage !== 'upload' || algorithm === 'xxhash32') await measure(stage, algorithm, warm, -1 - i);
+  }
   rows.length = 0;
   for (const size of [1,10,50]) for (let round = 0; round < rounds; round++) {
     const bytes = randomFillSync(new Uint8Array(size * 1048576)); bytes.set([137,80,78,71,13,10,26,10]);
     new DataView(bytes.buffer).setUint32(32, sequence++);
     const order = round % 2 ? ['xxhash32','sha256'] : ['sha256','xxhash32'];
-    for (const stage of ['compute','hash','upload']) for (const algorithm of order) await measure(stage, algorithm, bytes, round);
+    for (const stage of ['compute','hash','upload']) for (const algorithm of order) {
+      if (stage !== 'upload' || algorithm === 'xxhash32') await measure(stage, algorithm, bytes, round);
+    }
   }
   await writeFile('bench-results/results.json', JSON.stringify({ rounds, rows,
     note: 'V8 sampled activity estimates, not Cloudflare billed CPU. Native/asynchronous work and sampling noise limit interpretation. Wall time includes local R2/network.' }, null, 2));
